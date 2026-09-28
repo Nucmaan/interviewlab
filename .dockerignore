@@ -1,0 +1,15 @@
+**/node_modules
+**/.next
+**/dist
+**/coverage
+**/*.tsbuildinfo
+packages/db/src/generated
+.git
+.env
+.env.*
+!.env.example
+brief
+PROMPT.md
+playwright-report
+test-results
+tests/e2e/.auth

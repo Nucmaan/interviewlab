@@ -1,0 +1,32 @@
+{
+  "name": "ircub",
+  "private": true,
+  "description": "Integrated Revenue Collection & Utility Billing Platform (IRCUB) - evaluation POC",
+  "packageManager": "pnpm@12.6.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @ircub/web --filter @ircub/worker --filter @ircub/mock-services dev",
+    "build": "pnpm -r build",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @ircub/core test",
+    "test:integration": "pnpm --filter @ircub/integration-tests test",
+    "test:e2e": "pnpm --filter @ircub/e2e-tests test",
+    "db:generate": "pnpm --filter @ircub/db generate",
+    "db:migrate": "pnpm --filter @ircub/db migrate:deploy",
+    "db:seed": "pnpm --filter @ircub/db seed",
+    "db:perf-data": "pnpm --filter @ircub/db perf-data"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "eslint": "^9.39.0",
+    "eslint-config-next": "16.3.6",
+    "globals": "^16.4.0",
+    "prettier": "^3.6.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.70.1"
+  }
+}

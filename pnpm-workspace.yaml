@@ -1,0 +1,12 @@
+packages:
+  - apps/*
+  - packages/*
+  - tests/*
+
+# pnpm blocks dependency install scripts unless they are listed here (supply-chain protection).
+allowBuilds:
+  esbuild: true
+  unrs-resolver: false
+  msgpackr-extract: false
+  prisma: true
+  '@prisma/engines': true

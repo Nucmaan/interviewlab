@@ -1,0 +1,35 @@
+# Confidential brief and personal working file
+brief/
+PROMPT.md
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies and build output
+node_modules/
+.next/
+dist/
+out/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# Generated Prisma client
+packages/db/src/generated/
+
+# Test artefacts
+playwright-report/
+test-results/
+tests/e2e/.auth/
+
+# Large generated performance data
+packages/db/perf-data/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

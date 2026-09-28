@@ -1,0 +1,21 @@
+{
+  "name": "@ircub/platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shared infrastructure for the web app and worker: logger, Redis, queues, cache and events",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "bullmq": "~5.81.5",
+    "ioredis": "^5.11.1",
+    "pino": "^10.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0"
+  }
+}
