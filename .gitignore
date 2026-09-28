@@ -17,6 +17,8 @@ coverage/
 *.tsbuildinfo
 next-env.d.ts
 
+Farsight_Africa_-_Software_Developer_Evaluation_Test_IRCUB.pdf
+
 # Generated Prisma client
 packages/db/src/generated/
 

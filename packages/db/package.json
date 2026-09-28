@@ -15,7 +15,8 @@
     "seed": "tsx scripts/seed.ts",
     "migrate:all": "prisma migrate deploy && tsx scripts/apply-sql.ts && tsx scripts/seed.ts",
     "perf-data": "tsx scripts/perf-data.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "tamper-demo": "tsx scripts/tamper-demo.ts"
   },
   "dependencies": {
     "@ircub/core": "workspace:*",

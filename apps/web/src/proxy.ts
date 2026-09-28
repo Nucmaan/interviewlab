@@ -7,7 +7,10 @@ import { authConfig } from '@/lib/auth/config';
  * channel callbacks authenticate with an HMAC signature instead of a session.
  * Fine-grained permission checks happen in each page, action and route - not here.
  */
-export const { auth: proxy } = NextAuth(authConfig);
+const { auth } = NextAuth(authConfig);
+
+// Next.js needs a plain function export here (a destructured export is not recognised).
+export default auth;
 
 export const config = {
   matcher: ['/((?!api|login|api-docs|_next/static|_next/image|favicon.ico).*)'],

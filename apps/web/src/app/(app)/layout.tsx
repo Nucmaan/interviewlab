@@ -20,7 +20,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b bg-background px-4 print:hidden">
-        <AppNav sections={sections} />
+        <AppNav sections={sections} variant="mobile" />
         <Link href="/" className="font-semibold text-primary">
           IRCUB
         </Link>
@@ -45,7 +45,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       <div className="mx-auto flex max-w-[1500px] gap-6 px-4 py-6">
         <aside className="hidden w-60 shrink-0 lg:block print:hidden">
           <div className="sticky top-20">
-            <AppNav sections={sections} />
+            <AppNav sections={sections} variant="sidebar" />
           </div>
         </aside>
         <main className="min-w-0 flex-1">{children}</main>

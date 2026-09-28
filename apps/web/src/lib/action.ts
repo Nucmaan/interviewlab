@@ -17,14 +17,15 @@ export type ActionResult<T> =
  * only for convenience; this server-side check is the one that counts.
  */
 export function createAction<S extends z.ZodType, T>(
-  permission: PermissionCode | readonly PermissionCode[],
+  /** Required permission(s), or 'authenticated' for actions every signed-in user may use. */
+  permission: PermissionCode | readonly PermissionCode[] | 'authenticated',
   schema: S,
   handler: (input: z.output<S>, user: CurrentUser) => Promise<T>,
 ) {
   return async (input: z.input<S>): Promise<ActionResult<T>> => {
     const user = await getCurrentUser();
     if (!user) return { ok: false, error: 'Your session has expired. Please sign in again.' };
-    if (!hasPermission(user, permission)) {
+    if (permission !== 'authenticated' && !hasPermission(user, permission)) {
       return { ok: false, error: 'You do not have permission to do this.' };
     }
     const parsed = schema.safeParse(input);
