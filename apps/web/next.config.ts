@@ -17,7 +17,23 @@ const nextConfig: NextConfig = {
   // Workspace packages are shipped as TypeScript source.
   transpilePackages: ['@ircub/core', '@ircub/db', '@ircub/platform'],
   // Native / file-reading packages must be loaded by Node at runtime, not bundled.
-  serverExternalPackages: ['@node-rs/argon2', 'pdfkit', 'pino', 'bullmq', 'ioredis', 'pg'],
+  serverExternalPackages: [
+    '@node-rs/argon2',
+    'pdfkit',
+    'pino',
+    'bullmq',
+    'ioredis',
+    'pg',
+    'swagger-ui-dist',
+  ],
+  // Files read from disk at runtime must be listed so the standalone build ships them.
+  outputFileTracingIncludes: {
+    '/api-docs/[file]': [
+      './node_modules/swagger-ui-dist/swagger-ui.css',
+      './node_modules/swagger-ui-dist/swagger-ui-bundle.js',
+    ],
+    '/api/openapi': ['../../docs/api/openapi.yaml'],
+  },
   poweredByHeader: false,
   // CSV uploads (payments, assessments, meter readings) go through server actions.
   experimental: { serverActions: { bodySizeLimit: '10mb' } },

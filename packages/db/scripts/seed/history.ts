@@ -461,9 +461,9 @@ export async function seedHistory(
     forceUnpaid = false,
   ) {
     if (createdAt > today) return;
-    // Amounts rise ~0.5% a month (inflation / rate reviews).
+    // Amounts rise ~1.2% a month (inflation, rate reviews, better enforcement).
     const monthsIn = Math.max(0, (createdAt.getTime() - historyStart.getTime()) / (30 * DAY_MS));
-    const amountDue = Math.round((baseAmount * (1 + 0.005 * monthsIn)) / 100) * 100;
+    const amountDue = Math.round((baseAmount * (1 + 0.012 * monthsIn)) / 100) * 100;
     const id = ++assessmentId;
 
     const [onTime, late, instalments, none] = outcomeWeights[payer.reliability];

@@ -83,3 +83,62 @@ export function forecastNextQuarter(monthlyTotals: readonly number[]): QuarterFo
     nextQuarterTotal: monthly.reduce((s, v) => s + v, 0),
   };
 }
+
+export interface SeasonalForecast extends QuarterForecast {
+  /** Multiplier per calendar month (index 0 = January); 1.0 = an average month. */
+  seasonalFactors: number[];
+  /** How well trend x seasonal factor explains the history (1 = perfectly). */
+  fittedRSquared: number;
+}
+
+/**
+ * The "better, justified" model: linear trend x monthly seasonal factor (classical multiplicative
+ * decomposition). Revenue here is strongly seasonal - business licences are all due in January - so
+ * a straight line alone explains almost none of the month-to-month variation (R² near 0). We keep
+ * the regression line for the trend, then learn how much each calendar month usually sits above or
+ * below it:
+ *   factor[month] = average of (actual / trend) for that month, normalised so the 12 average 1
+ *   forecast      = trend(x) * factor[month of x]
+ * It needs at least two full years so every month has been seen at least twice.
+ */
+export function forecastSeasonal(
+  monthlyTotals: readonly number[],
+  firstCalendarMonth: number,
+): SeasonalForecast {
+  if (monthlyTotals.length < 24) {
+    throw new Error('At least 24 months of history are needed for a seasonal forecast');
+  }
+  if (!Number.isInteger(firstCalendarMonth) || firstCalendarMonth < 0 || firstCalendarMonth > 11) {
+    throw new RangeError('firstCalendarMonth must be 0 (January) to 11 (December)');
+  }
+  const model = linearRegression(monthlyTotals.map((y, x) => ({ x, y })));
+  const calendarMonth = (x: number) => (firstCalendarMonth + x) % 12;
+
+  const ratios: number[][] = Array.from({ length: 12 }, () => []);
+  monthlyTotals.forEach((y, x) => {
+    const trend = predict(model, x);
+    if (trend > 0) ratios[calendarMonth(x)]!.push(y / trend);
+  });
+  const raw = ratios.map((r) => (r.length ? r.reduce((s, v) => s + v, 0) / r.length : 1));
+  const mean = raw.reduce((s, v) => s + v, 0) / 12;
+  const seasonalFactors = raw.map((f) => f / mean);
+
+  const fitted = monthlyTotals.map(
+    (_, x) => predict(model, x) * seasonalFactors[calendarMonth(x)]!,
+  );
+  const avg = monthlyTotals.reduce((s, v) => s + v, 0) / monthlyTotals.length;
+  const ssTotal = monthlyTotals.reduce((s, y) => s + (y - avg) ** 2, 0);
+  const ssResidual = monthlyTotals.reduce((s, y, x) => s + (y - fitted[x]!) ** 2, 0);
+
+  const start = monthlyTotals.length;
+  const monthly = [0, 1, 2].map((i) =>
+    Math.max(0, Math.round(predict(model, start + i) * seasonalFactors[calendarMonth(start + i)]!)),
+  );
+  return {
+    model,
+    monthly,
+    nextQuarterTotal: monthly.reduce((s, v) => s + v, 0),
+    seasonalFactors,
+    fittedRSquared: ssTotal === 0 ? 1 : 1 - ssResidual / ssTotal,
+  };
+}

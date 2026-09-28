@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { forecastNextQuarter, linearRegression, predict } from './regression';
+import { forecastNextQuarter, forecastSeasonal, linearRegression, predict } from './regression';
 
 describe('linearRegression', () => {
   it('recovers a perfect straight line', () => {
@@ -60,5 +60,40 @@ describe('forecastNextQuarter', () => {
 
   it('requires at least 3 months of history', () => {
     expect(() => forecastNextQuarter([1, 2])).toThrow();
+  });
+});
+
+describe('forecastSeasonal', () => {
+  // 3 years starting in January: steady growth, and every January is 4x a normal month.
+  const series = Array.from({ length: 36 }, (_, x) => (100 + 2 * x) * (x % 12 === 0 ? 4 : 1));
+
+  it('learns that January is far above the trend', () => {
+    const f = forecastSeasonal(series, 0);
+    expect(f.seasonalFactors[0]).toBeGreaterThan(3);
+    expect(f.seasonalFactors[5]).toBeLessThan(1);
+  });
+
+  it('explains a seasonal series much better than a straight line', () => {
+    const seasonal = forecastSeasonal(series, 0);
+    const linear = linearRegression(series.map((y, x) => ({ x, y })));
+    expect(linear.rSquared).toBeLessThan(0.1);
+    expect(seasonal.fittedRSquared).toBeGreaterThan(0.9);
+  });
+
+  it('forecasts the next January spike', () => {
+    // History ends in December, so the next three months are January to March.
+    const f = forecastSeasonal(series, 0);
+    expect(f.monthly[0]!).toBeGreaterThan(3 * f.monthly[1]!);
+  });
+
+  it('keeps seasonal factors averaging 1', () => {
+    const f = forecastSeasonal(series, 0);
+    const mean = f.seasonalFactors.reduce((s, v) => s + v, 0) / 12;
+    expect(mean).toBeCloseTo(1);
+  });
+
+  it('needs two full years and a valid start month', () => {
+    expect(() => forecastSeasonal(series.slice(0, 23), 0)).toThrow();
+    expect(() => forecastSeasonal(series, 12)).toThrow(RangeError);
   });
 });
