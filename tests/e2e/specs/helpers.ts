@@ -9,8 +9,15 @@ try {
 
 /** Password of every seeded demo user (test accounts only). */
 export const DEMO_PASSWORD = process.env.SEED_DEMO_PASSWORD ?? 'Demo@Ircub2026!';
+/** The administrator has its own credentials (SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD). */
+const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? 'admin@ircub.test';
+const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? DEMO_PASSWORD;
 
-export async function login(page: Page, email: string, password = DEMO_PASSWORD): Promise<void> {
+export async function login(
+  page: Page,
+  email: string,
+  password = email === ADMIN_EMAIL ? ADMIN_PASSWORD : DEMO_PASSWORD,
+): Promise<void> {
   await page.goto('/login');
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);

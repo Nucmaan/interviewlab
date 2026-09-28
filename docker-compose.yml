@@ -50,6 +50,8 @@ services:
     environment:
       <<: *app-env
       SEED_DEMO_PASSWORD: ${SEED_DEMO_PASSWORD}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@ircub.test}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
     depends_on:
       postgres:
         condition: service_healthy

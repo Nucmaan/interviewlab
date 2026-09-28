@@ -26,12 +26,16 @@ async function main(): Promise<void> {
     }
     const password = process.env.SEED_DEMO_PASSWORD;
     if (!password) throw new Error('SEED_DEMO_PASSWORD is not set');
+    const admin = {
+      email: (process.env.SEED_ADMIN_EMAIL ?? 'admin@ircub.test').trim().toLowerCase(),
+      password: process.env.SEED_ADMIN_PASSWORD ?? password,
+    };
 
     const started = Date.now();
     await seedAccessControl(prisma);
     await seedSystemConfig(prisma);
     await seedRevenueAndTariffs(prisma, new Date(Date.UTC(2024, 0, 1)));
-    const users = await seedDemoUsers(prisma, password);
+    const users = await seedDemoUsers(prisma, password, admin);
     log(`reference data and ${DEMO_USERS.length} demo users created`);
 
     const result = await seedHistory(prisma, {

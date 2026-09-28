@@ -1,0 +1,184 @@
+{
+  "info": {
+    "name": "IRCUB API",
+    "_postman_id": "8f3a3c1e-1f0b-4d51-9a0c-1c1b2f6e9a01",
+    "description": "IRCUB evaluation POC. Channel requests (folder 'Channels') are signed automatically by the collection pre-request script: X-Signature = hex(HMAC-SHA256(channelSecret, X-Timestamp + '.' + body)). User endpoints need a browser session: sign in at {{baseUrl}}/login first, then copy the 'authjs.session-token' cookie into Postman (or use the Postman interceptor). Full definition: docs/api/openapi.yaml (Swagger UI at {{baseUrl}}/api-docs).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "mockUrl", "value": "http://localhost:4000" },
+    { "key": "channelSecret", "value": "local-demo-callback-secret" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Sign requests to the channel APIs the way a bank or mobile money provider would.",
+          "if (pm.request.url.getPath().startsWith('/api/payments/') && pm.request.method === 'POST') {",
+          "  const timestamp = String(Math.floor(Date.now() / 1000));",
+          "  const body = pm.request.body && pm.request.body.raw ? pm.variables.replaceIn(pm.request.body.raw) : '';",
+          "  const signature = CryptoJS.HmacSHA256(timestamp + '.' + body, pm.variables.get('channelSecret')).toString(CryptoJS.enc.Hex);",
+          "  pm.request.headers.upsert({ key: 'X-Timestamp', value: timestamp });",
+          "  pm.request.headers.upsert({ key: 'X-Signature', value: signature });",
+          "  if (!pm.request.headers.has('Idempotency-Key')) {",
+          "    pm.request.headers.upsert({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });",
+          "  }",
+          "  // The body must be sent exactly as signed.",
+          "  pm.request.body.raw = body;",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Channels (HMAC signed)",
+      "item": [
+        {
+          "name": "Bulk payments (6 rows: 2 valid, 4 rejected)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/payments/bulk",
+            "body": {
+              "mode": "raw",
+              "raw": "[\n  { \"payer_id\": 12, \"revenue_code\": \"BL\", \"amount\": 150.5, \"currency\": \"USD\", \"channel\": \"BANK\", \"external_ref\": \"PM-{{$timestamp}}-1\", \"paid_at\": \"{{$isoTimestamp}}\" },\n  { \"payer_id\": 13, \"revenue_code\": \"MF\", \"amount\": 15000, \"currency\": \"SOS\", \"channel\": \"MOBILE_MONEY\", \"external_ref\": \"PM-{{$timestamp}}-2\", \"paid_at\": \"{{$isoTimestamp}}\" },\n  { \"payer_id\": 99999, \"revenue_code\": \"BL\", \"amount\": 10, \"currency\": \"USD\", \"channel\": \"BANK\", \"external_ref\": \"PM-{{$timestamp}}-3\", \"paid_at\": \"{{$isoTimestamp}}\" },\n  { \"payer_id\": 14, \"revenue_code\": \"ROAD\", \"amount\": 10, \"currency\": \"USD\", \"channel\": \"BANK\", \"external_ref\": \"PM-{{$timestamp}}-4\", \"paid_at\": \"{{$isoTimestamp}}\" },\n  { \"payer_id\": 15, \"revenue_code\": \"SD\", \"amount\": 0, \"currency\": \"SOS\", \"channel\": \"CASH\", \"external_ref\": \"PM-{{$timestamp}}-5\", \"paid_at\": \"{{$isoTimestamp}}\" },\n  { \"payer_id\": 16, \"revenue_code\": \"SD\", \"amount\": 25000, \"currency\": \"SOS\", \"channel\": \"CASH\", \"external_ref\": \"PM-{{$timestamp}}-1\", \"paid_at\": \"{{$isoTimestamp}}\" }\n]"
+            },
+            "description": "Expected: 200 {received 6, accepted 2, rejected 4, errors[...]}. Send it again with the same Idempotency-Key header to get the stored response (header Idempotent-Replayed: true)."
+          }
+        },
+        {
+          "name": "Payment callback (control number)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/payments/callback",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"external_ref\": \"MM-PM-{{$timestamp}}\",\n  \"status\": \"SUCCESS\",\n  \"amount\": 10,\n  \"currency\": \"USD\",\n  \"channel\": \"MOBILE_MONEY\",\n  \"paid_at\": \"{{$isoTimestamp}}\",\n  \"control_number\": \"REPLACE-WITH-AN-OPEN-CONTROL-NUMBER\"\n}"
+            },
+            "description": "Replace control_number with an open assessment (AS-...) or water bill (WB-...) reference from the app. An unknown or invalid control number is rejected and stored in rejected_payment."
+          }
+        },
+        {
+          "name": "Forged callback (wrong signature) - expect 401",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Timestamp", "value": "{{$timestamp}}" },
+              {
+                "key": "X-Signature",
+                "value": "0000000000000000000000000000000000000000000000000000000000000000"
+              },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "url": "{{baseUrl}}/api/payments/callback",
+            "body": { "mode": "raw", "raw": "{\"external_ref\":\"FORGED-1\"}" },
+            "description": "The collection script signs every channel request; this request's own pre-request script (which runs after it) replaces the signature with zeros to prove forged requests are refused."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.request.headers.upsert({ key: 'X-Signature', value: '00'.repeat(32) });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('rejected with 401', () => pm.response.to.have.status(401));"]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "User API (needs a session cookie)",
+      "item": [
+        {
+          "name": "Revenue summary for today (cache-aside)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/reports/revenue-summary" },
+          "description": "Call twice: the second response shows cache hits."
+        },
+        {
+          "name": "Search payers",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/payers/search?q=WA-000001" }
+        },
+        {
+          "name": "Payment statuses",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/payments/status?ids=1,2,3" }
+        },
+        {
+          "name": "Water bill PDF",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/water/bills/1/pdf" }
+        }
+      ]
+    },
+    {
+      "name": "System",
+      "item": [
+        { "name": "Health", "request": { "method": "GET", "url": "{{baseUrl}}/api/health" } },
+        {
+          "name": "OpenAPI definition",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/openapi" }
+        }
+      ]
+    },
+    {
+      "name": "Mock services",
+      "item": [
+        { "name": "Exchange rates", "request": { "method": "GET", "url": "{{mockUrl}}/rates" } },
+        {
+          "name": "Sent SMS / emails",
+          "request": { "method": "GET", "url": "{{mockUrl}}/messages" }
+        },
+        {
+          "name": "Channel statement (mobile money, one day)",
+          "request": { "method": "GET", "url": "{{mockUrl}}/statements/MOBILE_MONEY/2026-09-28" },
+          "description": "Change the date (YYYY-MM-DD) to the day you want."
+        },
+        {
+          "name": "FMIS totals",
+          "request": {
+            "method": "GET",
+            "url": "{{mockUrl}}/fmis/totals?from=2026-01-01&to=2026-12-31"
+          }
+        },
+        {
+          "name": "Current failure settings",
+          "request": { "method": "GET", "url": "{{mockUrl}}/admin/config" }
+        },
+        {
+          "name": "Switch FMIS down (demo)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{mockUrl}}/admin/config",
+            "body": { "mode": "raw", "raw": "{ \"fmisDown\": true }" }
+          }
+        },
+        {
+          "name": "Restore defaults",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{mockUrl}}/admin/config",
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"fmisDown\": false, \"failureRate\": 0.1, \"callbackDropRate\": 0.2, \"delayMs\": 300 }"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -9,7 +9,6 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@ircub/core": "workspace:*",
     "@ircub/db": "workspace:*",
     "@ircub/platform": "workspace:*",
     "@ircub/worker": "workspace:*",
