@@ -6,6 +6,7 @@ import { type Prisma, PrismaClient } from './generated/prisma/client';
 
 export * from './generated/prisma/client';
 export { recordAudit, verifyAuditLog, type AuditEntry } from './audit';
+export { getConfig } from './config';
 
 export type Tx = Prisma.TransactionClient;
 

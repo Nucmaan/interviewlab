@@ -1,0 +1,19 @@
+{
+  "name": "@ircub/integration-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Integration tests against a real PostgreSQL + Redis (the ircub_test database)",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@ircub/core": "workspace:*",
+    "@ircub/db": "workspace:*",
+    "@ircub/platform": "workspace:*",
+    "@ircub/worker": "workspace:*",
+    "@types/node": "^24.0.0",
+    "vitest": "~4.1.11"
+  }
+}

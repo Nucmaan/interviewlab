@@ -4,9 +4,9 @@
  * them from Node. Afterwards it prints EXPLAIN ANALYZE for the quarterly report so you can see
  * the indexes from sql/02 in action.
  *
- *   pnpm db:perf-data                      # add 1,000,000 rows
- *   pnpm db:perf-data -- --count 5000000   # add 5,000,000 rows
- *   pnpm db:perf-data -- --cleanup         # remove every generated row again
+ *   pnpm --filter @ircub/db perf-data                      # add 1,000,000 rows
+ *   pnpm --filter @ircub/db perf-data -- --count 5000000   # add 5,000,000 rows
+ *   pnpm --filter @ircub/db perf-data -- --cleanup         # remove every generated row again
  *
  * Generated rows have external_ref 'PERF-...' and are marked as already posted to FMIS, so the
  * worker does not try to post a million synthetic payments to the mock FMIS.

@@ -1,0 +1,56 @@
+[
+  {
+    "payer_id": 12,
+    "revenue_code": "BL",
+    "amount": 150.5,
+    "currency": "USD",
+    "channel": "BANK",
+    "external_ref": "DEMO-BULK-0001",
+    "paid_at": "2026-09-28T12:51:37Z"
+  },
+  {
+    "payer_id": 13,
+    "revenue_code": "MF",
+    "amount": 15000,
+    "currency": "SOS",
+    "channel": "MOBILE_MONEY",
+    "external_ref": "DEMO-BULK-0002",
+    "paid_at": "2026-09-28T12:51:37Z"
+  },
+  {
+    "payer_id": 99999,
+    "revenue_code": "BL",
+    "amount": 10,
+    "currency": "USD",
+    "channel": "BANK",
+    "external_ref": "DEMO-BULK-0003",
+    "paid_at": "2026-09-28T12:51:37Z"
+  },
+  {
+    "payer_id": 14,
+    "revenue_code": "ROAD",
+    "amount": 10,
+    "currency": "USD",
+    "channel": "BANK",
+    "external_ref": "DEMO-BULK-0004",
+    "paid_at": "2026-09-28T12:51:37Z"
+  },
+  {
+    "payer_id": 15,
+    "revenue_code": "SD",
+    "amount": 0,
+    "currency": "SOS",
+    "channel": "CASH",
+    "external_ref": "DEMO-BULK-0005",
+    "paid_at": "2026-09-28T12:51:37Z"
+  },
+  {
+    "payer_id": 16,
+    "revenue_code": "SD",
+    "amount": 25000,
+    "currency": "SOS",
+    "channel": "CASH",
+    "external_ref": "DEMO-BULK-0001",
+    "paid_at": "2026-09-28T12:51:37Z"
+  }
+]

@@ -125,3 +125,24 @@ export function summariseByGl(lines: readonly JournalLineDraft[]): FmisJournalLi
 export function exponentialBackoffMs(attempt: number, baseMs: number): number {
   return baseMs * 2 ** Math.max(0, attempt - 1);
 }
+
+/**
+ * Journal that undoes a posted collection: each line's debit and credit swap sides
+ * (debit the revenue GL, credit the bank). Used when an approved reversal hits a payment that
+ * has already been posted to FMIS.
+ */
+export function buildReversalJournal(
+  businessDate: string,
+  payments: readonly JournalPayment[],
+  collectionBankGl: string,
+): JournalDraft {
+  const original = buildDailyJournal(businessDate, payments, collectionBankGl);
+  const lines = original.lines.map((line) => ({
+    ...line,
+    debit: line.credit,
+    credit: line.debit,
+    description: `Reversal: ${line.description}`,
+  }));
+  assertBalanced(lines);
+  return { ...original, lines };
+}

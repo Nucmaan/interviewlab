@@ -1,0 +1,15 @@
+{
+  "name": "@ircub/e2e-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright end-to-end tests against a running IRCUB stack",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "install-browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^24.0.0"
+  }
+}

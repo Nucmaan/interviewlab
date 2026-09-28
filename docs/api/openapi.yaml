@@ -1,0 +1,366 @@
+openapi: 3.0.3
+info:
+  title: IRCUB API
+  version: 1.0.0
+  description: |
+    REST API of the Integrated Revenue Collection & Utility Billing Platform (evaluation POC).
+
+    **Two kinds of authentication**
+
+    * **Channel APIs** (`/api/payments/callback`, `/api/payments/bulk`) are called by banks and
+      mobile money providers. They are authenticated with an **HMAC-SHA256 signature**:
+      `X-Signature = hex(HMAC_SHA256(secret, X-Timestamp + "." + rawBody))`. Requests whose
+      `X-Timestamp` is more than 5 minutes from server time are rejected (replay protection).
+      Every request needs an **`Idempotency-Key`**; repeating a key with the same body returns the
+      original response (header `Idempotent-Replayed: true`).
+    * **User APIs** use the browser session cookie set at `/login` (Auth.js). Each endpoint needs a
+      permission; missing session = 401, missing permission = 403.
+
+    All amounts in reports are in the base currency (SOS). Payments may be sent in USD or SOS.
+servers:
+  - url: http://localhost:3000
+    description: Local Docker Compose stack
+tags:
+  - name: Channels
+    description: Bank and mobile money integrations (HMAC authenticated)
+  - name: Payments
+  - name: Registry
+  - name: Reports
+  - name: Water
+  - name: System
+
+paths:
+  /api/payments/callback:
+    post:
+      tags: [Channels]
+      summary: Payment notification from a bank or mobile money provider
+      description: |
+        * If IRCUB initiated the payment (status AWAITING_CONFIRMATION), SUCCESS moves it on to
+          processing and FAILED marks it failed. The amount and currency must match.
+        * Otherwise the payer paid with a **control number** (`AS-...` assessment or `WB-...`
+          water bill). IRCUB looks it up and records the payment.
+        * A callback for a payment that is already recorded is reported as a duplicate with
+          HTTP 200, so the channel stops retrying.
+        Failed / invalid notifications are stored in `rejected_payment`, separate from payments.
+      operationId: paymentCallback
+      security: [{ hmacSignature: [], hmacTimestamp: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Callback' }
+            example:
+              external_ref: MM-20260928-000123
+              status: SUCCESS
+              amount: 25.5
+              currency: USD
+              channel: MOBILE_MONEY
+              paid_at: '2026-09-28T09:15:00Z'
+              control_number: AS-2026-0001234-6
+              provider_ref: PRV-8F2A11C0
+      responses:
+        '200': { $ref: '#/components/responses/IngestSummary' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/BadSignature' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+
+  /api/payments/bulk:
+    post:
+      tags: [Channels]
+      summary: Bulk upload of payment records (JSON array, max 10,000)
+      description: |
+        Every row is validated on its own (amount > 0, payer exists, revenue code valid and
+        active, external_ref unique in the database and inside the file). Valid rows are stored
+        with status PENDING and queued for the worker pool; rejected rows are stored in
+        `rejected_payment` with the reason, and listed in the response.
+      operationId: bulkPayments
+      security: [{ hmacSignature: [], hmacTimestamp: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              minItems: 1
+              maxItems: 10000
+              items: { $ref: '#/components/schemas/PaymentRecord' }
+      responses:
+        '200': { $ref: '#/components/responses/IngestSummary' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/BadSignature' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+
+  /api/payments/status:
+    get:
+      tags: [Payments]
+      summary: Current status of up to 50 payments
+      description: 'Permission: payments.view, payments.capture or self.view (own payments only).'
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          schema: { type: string, example: '16611,16612' }
+      responses:
+        '200':
+          description: Status per payment id
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  statuses:
+                    type: object
+                    additionalProperties: { $ref: '#/components/schemas/PaymentStatus' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+
+  /api/payers/search:
+    get:
+      tags: [Registry]
+      summary: Search payers by TIN, phone, water account number or name
+      description: 'Permission: payments.capture or payers.view. Returns open assessments and payable water bills.'
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 2, maxLength: 100, example: WA-000001 }
+      responses:
+        '200':
+          description: Up to 10 matching payers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items: { $ref: '#/components/schemas/PayerSearchResult' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+
+  /api/reports/revenue-summary:
+    get:
+      tags: [Reports]
+      summary: Revenue summary per revenue type for one day (Redis cache-aside)
+      description: |
+        Permission: dashboard.view or payments.view. Each revenue type is cached under
+        `summary:{revenue_code}:{date}` for 5 minutes and invalidated when a payment for that
+        revenue type and day is posted. `cache` shows how many entries came from Redis.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: date
+          in: query
+          required: false
+          schema: { type: string, format: date, example: '2026-09-28' }
+      responses:
+        '200':
+          description: Summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RevenueSummary' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+
+  /api/events:
+    get:
+      tags: [System]
+      summary: Server-Sent Events stream of live updates
+      description: |
+        `text/event-stream`. Event types: `ready`, `payment.updated`, `summary.updated`,
+        `alert.created`, `fmis.batch`, `billing.cycle`. Self-service users only receive their own
+        payment events.
+      security: [{ sessionCookie: [] }]
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '401': { description: Not signed in }
+
+  /api/health:
+    get:
+      tags: [System]
+      summary: Liveness / readiness (PostgreSQL and Redis reachable)
+      responses:
+        '200': { description: Healthy }
+        '503': { description: A dependency is unavailable }
+
+components:
+  securitySchemes:
+    hmacSignature:
+      type: apiKey
+      in: header
+      name: X-Signature
+      description: hex(HMAC_SHA256(CHANNEL_CALLBACK_SECRET, X-Timestamp + "." + rawBody))
+    hmacTimestamp:
+      type: apiKey
+      in: header
+      name: X-Timestamp
+      description: Unix time in seconds; must be within 5 minutes of server time.
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: authjs.session-token
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Unique per logical request (max 128 characters). Reuse it when retrying.
+      schema: { type: string, maxLength: 128, example: bank-a-2026-09-28-batch-17 }
+
+  schemas:
+    Currency:
+      type: string
+      enum: [USD, SOS]
+    Channel:
+      type: string
+      enum: [BANK, MOBILE_MONEY, CASH]
+    PaymentStatus:
+      type: string
+      enum: [AWAITING_CONFIRMATION, PENDING, PROCESSING, DONE, FAILED, REVERSED]
+    PaymentRecord:
+      type: object
+      required: [payer_id, revenue_code, amount, currency, channel, external_ref, paid_at]
+      properties:
+        payer_id: { type: integer, minimum: 1, example: 12 }
+        revenue_code: { type: string, example: BL }
+        amount:
+          { type: number, exclusiveMinimum: true, minimum: 0, multipleOf: 0.01, example: 150.5 }
+        currency: { $ref: '#/components/schemas/Currency' }
+        channel: { $ref: '#/components/schemas/Channel' }
+        external_ref:
+          type: string
+          minLength: 3
+          maxLength: 64
+          pattern: '^[A-Za-z0-9._/-]+$'
+          example: BNK-20260928-000045
+        paid_at: { type: string, format: date-time, example: '2026-09-28T08:30:00Z' }
+        assessment_id: { type: integer, nullable: true }
+        bill_id: { type: integer, nullable: true }
+    Callback:
+      type: object
+      required: [external_ref, status, amount, currency, channel, paid_at]
+      properties:
+        external_ref: { type: string, minLength: 3, maxLength: 64 }
+        status: { type: string, enum: [SUCCESS, FAILED] }
+        amount: { type: number, minimum: 0.01 }
+        currency: { $ref: '#/components/schemas/Currency' }
+        channel: { type: string, enum: [BANK, MOBILE_MONEY] }
+        paid_at: { type: string, format: date-time }
+        control_number:
+          type: string
+          description: Required when IRCUB did not initiate the payment.
+          example: WB-2026-0004567-3
+        provider_ref: { type: string }
+        failure_reason: { type: string }
+    IngestSummary:
+      type: object
+      required: [received, accepted, rejected, errors]
+      properties:
+        received: { type: integer, example: 6 }
+        accepted: { type: integer, example: 2 }
+        rejected: { type: integer, example: 4 }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              row: { type: integer, example: 3 }
+              reason: { type: string, example: Payer 99999 does not exist }
+    PayerSearchResult:
+      type: object
+      properties:
+        payerId: { type: integer }
+        fullName: { type: string }
+        tin: { type: string }
+        phone: { type: string, nullable: true }
+        payerType: { type: string, enum: [INDIVIDUAL, BUSINESS] }
+        openAssessments:
+          type: array
+          items:
+            type: object
+            properties:
+              assessmentId: { type: integer }
+              revenueCode: { type: string }
+              controlNumber: { type: string }
+              period: { type: string, nullable: true }
+              dueDate: { type: string, format: date }
+              outstanding: { type: number }
+        openBills:
+          type: array
+          items:
+            type: object
+            properties:
+              billId: { type: integer }
+              accountNo: { type: string }
+              billingMonth: { type: string, example: '2026-08' }
+              controlNumber: { type: string }
+              outstanding: { type: number }
+    RevenueSummary:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        cache:
+          type: object
+          properties:
+            hits: { type: integer }
+            misses: { type: integer }
+        totalBase: { type: number }
+        revenueTypes:
+          type: array
+          items:
+            type: object
+            properties:
+              revenueCode: { type: string }
+              name: { type: string }
+              paymentCount: { type: integer }
+              totalBase: { type: number }
+              byChannel:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    channel: { $ref: '#/components/schemas/Channel' }
+                    count: { type: integer }
+                    total: { type: number }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        reason: { type: string }
+
+  responses:
+    IngestSummary:
+      description: Processing summary (also returned, unchanged, for a replayed Idempotency-Key)
+      headers:
+        Idempotent-Replayed:
+          schema: { type: string, enum: ['true'] }
+          description: Present when this is the stored response of an earlier identical request.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/IngestSummary' }
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    BadSignature:
+      description: Missing / invalid signature or expired timestamp
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: Invalid signature, reason: EXPIRED }

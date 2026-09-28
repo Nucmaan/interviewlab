@@ -7,26 +7,24 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "pnpm --parallel --filter @ircub/web --filter @ircub/worker --filter @ircub/mock-services dev",
-    "build": "pnpm -r build",
+    "dev": "docker compose up --build",
+    "build": "docker compose build",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "typecheck": "pnpm -r typecheck",
-    "test": "pnpm --filter @ircub/core test",
-    "test:integration": "pnpm --filter @ircub/integration-tests test",
-    "test:e2e": "pnpm --filter @ircub/e2e-tests test",
-    "db:generate": "pnpm --filter @ircub/db generate",
-    "db:migrate": "pnpm --filter @ircub/db migrate:deploy",
-    "db:seed": "pnpm --filter @ircub/db seed",
-    "db:perf-data": "pnpm --filter @ircub/db perf-data"
+    "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/platform && tsc --noEmit -p packages/db && tsc --noEmit -p apps/worker && tsc --noEmit -p apps/mock-services && tsc --noEmit -p apps/web && tsc --noEmit -p tests/integration",
+    "test": "vitest run --project core",
+    "test:integration": "vitest run --project integration",
+    "test:e2e": "playwright test --config tests/e2e/playwright.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
+    "@playwright/test": "1.63.0",
     "eslint": "^9.39.0",
     "eslint-config-next": "16.3.6",
     "globals": "^16.4.0",
     "prettier": "^3.6.0",
     "typescript": "~6.0.3",
-    "typescript-eslint": "^8.70.1"
+    "typescript-eslint": "^8.70.1",
+    "vitest": "~4.1.11"
   }
 }

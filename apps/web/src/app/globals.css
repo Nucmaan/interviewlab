@@ -1,0 +1,39 @@
+@import 'tailwindcss';
+
+/* Design tokens (shadcn/ui naming) used through Tailwind classes such as bg-primary. */
+@theme {
+  --color-background: #ffffff;
+  --color-foreground: #0f172a;
+  --color-card: #ffffff;
+  --color-card-foreground: #0f172a;
+  --color-muted: #f1f5f9;
+  --color-muted-foreground: #64748b;
+  --color-primary: #0b5d8a;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #e2e8f0;
+  --color-secondary-foreground: #0f172a;
+  --color-destructive: #dc2626;
+  --color-border: #e2e8f0;
+  --color-input: #cbd5e1;
+  --color-ring: #0b5d8a;
+  --color-sidebar: #f8fafc;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  body {
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+  }
+}
+
+/* Receipts and bills print cleanly: navigation and buttons are hidden with print:hidden. */
+@media print {
+  body {
+    background: #fff;
+  }
+}

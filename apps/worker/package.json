@@ -1,0 +1,26 @@
+{
+  "name": "@ircub/worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BullMQ background workers: payment processing, FMIS posting, billing, penalties, summaries, alerts",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ircub/core": "workspace:*",
+    "@ircub/db": "workspace:*",
+    "@ircub/platform": "workspace:*",
+    "bullmq": "~5.81.5",
+    "tsx": "^4.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0"
+  },
+  "exports": {
+    "./jobs/*": "./src/jobs/*.ts",
+    "./context": "./src/lib/context.ts"
+  }
+}

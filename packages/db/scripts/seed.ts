@@ -2,7 +2,7 @@
  * Seeds a fresh database with demo users (one per role), reference data and two years of
  * fictional history. Safe to run on every `docker compose up`: it does nothing if data exists.
  *
- *   pnpm db:seed
+ *   pnpm --filter @ircub/db seed
  */
 import { createPrismaClient, recordAudit } from '../src/index';
 import { loadEnv, log } from './env';

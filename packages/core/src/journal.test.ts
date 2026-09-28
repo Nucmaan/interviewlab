@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assertBalanced,
   buildDailyJournal,
+  buildReversalJournal,
   exponentialBackoffMs,
   summariseByGl,
   UnbalancedJournalError,
@@ -68,5 +69,15 @@ describe('assertBalanced', () => {
 describe('exponentialBackoffMs', () => {
   it('doubles the delay on each attempt', () => {
     expect([1, 2, 3].map((a) => exponentialBackoffMs(a, 1000))).toEqual([1000, 2000, 4000]);
+  });
+});
+
+describe('buildReversalJournal', () => {
+  it('swaps debits and credits and still balances', () => {
+    const reversal = buildReversalJournal('2026-01-11', [payments[2]!], '1101');
+    expect(reversal.lines).toEqual([
+      expect.objectContaining({ glCode: '1101', debit: 0, credit: 50, paymentId: null }),
+      expect.objectContaining({ glCode: '1520', debit: 50, credit: 0, paymentId: 3 }),
+    ]);
   });
 });

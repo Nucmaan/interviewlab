@@ -611,6 +611,8 @@ model JournalLine {
   // One credit line per payment. UNIQUE means a payment can never be posted twice.
   // The bank debit line has no payment (NULLs do not clash in a UNIQUE index).
   payment_id   Int?    @unique
+  // Set on lines of a REVERSAL batch; UNIQUE so a reversal is also posted at most once.
+  reversal_of_payment_id Int? @unique
   gl_code      String
   revenue_code String?
   debit        Decimal @default(0) @db.Decimal(16, 2)

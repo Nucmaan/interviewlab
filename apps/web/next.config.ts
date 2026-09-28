@@ -1,6 +1,14 @@
 import path from 'node:path';
 import type { NextConfig } from 'next';
 
+// Local development: read the repo-root .env (Docker passes real environment variables instead,
+// and loadEnvFile never overwrites variables that are already set).
+try {
+  process.loadEnvFile(path.resolve(import.meta.dirname, '../../.env'));
+} catch {
+  // No .env file - fine in Docker and CI.
+}
+
 const nextConfig: NextConfig = {
   // Self-contained server bundle for a small Docker image.
   output: 'standalone',
@@ -11,6 +19,8 @@ const nextConfig: NextConfig = {
   // Native / file-reading packages must be loaded by Node at runtime, not bundled.
   serverExternalPackages: ['@node-rs/argon2', 'pdfkit', 'pino', 'bullmq', 'ioredis', 'pg'],
   poweredByHeader: false,
+  // CSV uploads (payments, assessments, meter readings) go through server actions.
+  experimental: { serverActions: { bodySizeLimit: '10mb' } },
   async headers() {
     return [
       {
