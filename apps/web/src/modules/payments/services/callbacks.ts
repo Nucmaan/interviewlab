@@ -180,10 +180,19 @@ async function resolveControlNumber(controlNumber: string | undefined): Promise<
         }
       : null;
   }
-  const bill = await prisma.waterBill.findUnique({
+  let bill = await prisma.waterBill.findUnique({
     where: { control_number: normalised },
     include: { account: { select: { payer_id: true } } },
   });
+  // An old bill whose balance was carried into a newer bill: the payment belongs on the latest bill.
+  if (bill?.status === 'CARRIED_FORWARD') {
+    bill =
+      (await prisma.waterBill.findFirst({
+        where: { account_no: bill.account_no, status: { in: ['ISSUED', 'PART_PAID', 'PAID'] } },
+        orderBy: { billing_month: 'desc' },
+        include: { account: { select: { payer_id: true } } },
+      })) ?? bill;
+  }
   return bill
     ? {
         payerId: bill.account.payer_id,

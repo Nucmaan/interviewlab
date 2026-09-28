@@ -8,6 +8,7 @@ import {
   createRedis,
   getQueue,
   QUEUES,
+  type BillingJob,
   type FmisPostingJob,
   type NotificationJob,
   type PaymentStatusJob,
@@ -16,6 +17,7 @@ import {
   type SummaryJob,
 } from '@ircub/platform';
 import { createContext } from './lib/context';
+import { runBillingCycle } from './jobs/billing';
 import { refreshExchangeRates } from './jobs/exchange-rates';
 import { postAllPendingDays, postBusinessDay, reverseBatch, sendBatch } from './jobs/fmis-posting';
 import { runMaintenance } from './jobs/maintenance';
@@ -78,6 +80,9 @@ startWorker<SummaryJob>(QUEUES.summaries, 1, async (job) => {
 });
 
 startWorker(QUEUES.penalties, 1, () => runPenalties(ctx));
+
+// One billing cycle at a time; a cycle is idempotent, so a retry never double-bills.
+startWorker<BillingJob>(QUEUES.billing, 1, (job) => runBillingCycle(ctx, job.data.cycleId));
 
 // ── FMIS: one at a time, so journals reach FMIS in order ──
 startWorker<FmisPostingJob & { userId?: number }>(QUEUES.fmis, 1, async (job) => {
