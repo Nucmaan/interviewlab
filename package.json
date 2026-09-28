@@ -2,6 +2,7 @@
   "name": "ircub",
   "private": true,
   "description": "Integrated Revenue Collection & Utility Billing Platform (IRCUB) - evaluation POC",
+  "type": "module",
   "packageManager": "pnpm@12.6.0",
   "engines": {
     "node": ">=24"

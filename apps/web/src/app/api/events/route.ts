@@ -26,16 +26,28 @@ export async function GET(request: NextRequest) {
   const subscriber = createRedis();
   const encoder = new TextEncoder();
   let heartbeat: ReturnType<typeof setInterval> | undefined;
+  let closed = false;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (chunk: string) => {
+        if (!closed) controller.enqueue(encoder.encode(chunk));
+      };
+      // When the browser goes away, stop writing BEFORE the connection is torn down; writing to a
+      // closed response is what causes "destination stream closed early".
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        clearInterval(heartbeat);
+        subscriber.disconnect();
         try {
-          controller.enqueue(encoder.encode(chunk));
+          controller.close();
         } catch {
-          // The client has gone; cleanup happens in the abort handler.
+          // Already closed by the runtime.
         }
       };
+      request.signal.addEventListener('abort', close);
+
       subscriber.on('message', (_channel, message) => {
         try {
           const event = JSON.parse(message) as IrcubEvent;
@@ -50,14 +62,10 @@ export async function GET(request: NextRequest) {
       heartbeat = setInterval(() => send(`: ping\n\n`), HEARTBEAT_MS);
     },
     cancel() {
+      closed = true;
       clearInterval(heartbeat);
       subscriber.disconnect();
     },
-  });
-
-  request.signal.addEventListener('abort', () => {
-    clearInterval(heartbeat);
-    subscriber.disconnect();
   });
 
   return new Response(stream, {

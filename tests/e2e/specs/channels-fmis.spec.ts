@@ -16,7 +16,7 @@ test.describe('payment channels', () => {
     });
   });
 
-  test('a customer pays a water bill with mobile money and sees it confirmed live', async ({
+  test('a customer pays an open bill or assessment with mobile money and sees it confirmed live', async ({
     page,
   }) => {
     await login(page, 'taxpayer@ircub.test');

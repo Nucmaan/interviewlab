@@ -198,7 +198,7 @@ Example (from the running system):
 ```
 
 - **Code:** routes [`apps/web/src/app/api/payments/callback/route.ts`](../apps/web/src/app/api/payments/callback/route.ts), [`.../bulk/route.ts`](../apps/web/src/app/api/payments/bulk/route.ts); services in [`apps/web/src/modules/payments/services/`](../apps/web/src/modules/payments/services/) (`channel-auth.ts`, `idempotency.ts`, `callbacks.ts`, `ingest.ts`); signature in [`packages/core/src/hmac.ts`](../packages/core/src/hmac.ts).
-- **How to test:** `node scripts/send-signed.mjs bulk docs/api/examples/bulk-payments.json my-key-1` (run it twice with the same key to see the replay); `pnpm test` → `hmac.test.ts`; `pnpm test:integration` → `tests/integration/payment-api.test.ts` (bad signature, expired timestamp, replayed key, conflicting key).
+- **How to test:** `node scripts/send-signed.mjs bulk docs/api/examples/bulk-payments.json my-key-1` (run it twice with the same key to see the replay); `pnpm test` → `hmac.test.ts`; `pnpm test:e2e` → `tests/e2e/specs/payment-api.spec.ts` (bad signature, expired timestamp, missing key, replayed key, conflicting key, duplicate callback).
 
 ---
 

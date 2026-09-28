@@ -1,6 +1,7 @@
 import NextAuth, { CredentialsSignin } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import { z } from 'zod';
+import { logger } from '@/lib/logger';
 import { verifyLogin, type LoginFailure } from '@/modules/users/services/auth-service';
 import { authConfig } from './config';
 
@@ -20,6 +21,17 @@ const credentialsSchema = z.object({
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
+  // Auth.js logs through our structured logger. A failed login is expected (and already written
+  // to the audit log by verifyLogin), so it is a warning, not an error.
+  logger: {
+    error(error) {
+      if (error instanceof CredentialsSignin) logger.warn({ code: error.code }, 'sign-in rejected');
+      else logger.error({ err: error }, 'auth error');
+    },
+    warn(code) {
+      logger.warn({ code }, 'auth warning');
+    },
+  },
   providers: [
     Credentials({
       credentials: { email: {}, password: {}, totp: {} },
