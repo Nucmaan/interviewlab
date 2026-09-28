@@ -147,19 +147,27 @@ export async function seedAccessControl(prisma: PrismaClient): Promise<void> {
   }
 }
 
+/**
+ * Creates one demo user per role. The System Administrator gets its own email and password from
+ * SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD (.env); every other demo user uses SEED_DEMO_PASSWORD.
+ */
 export async function seedDemoUsers(
   prisma: PrismaClient,
   password: string,
+  admin: { email: string; password: string },
 ): Promise<Map<string, number>> {
   const passwordHash = await hash(password);
+  const adminHash = await hash(admin.password);
   const roles = new Map((await prisma.role.findMany()).map((r) => [r.code, r.role_id]));
   const userIds = new Map<string, number>();
   for (const user of DEMO_USERS) {
+    const isAdmin = user.role === 'SYSTEM_ADMIN';
+    const email = isAdmin ? admin.email : user.email;
     const created = await prisma.user.create({
       data: {
-        email: user.email,
+        email,
         full_name: user.full_name,
-        password_hash: passwordHash,
+        password_hash: isAdmin ? adminHash : passwordHash,
         roles: { create: [{ role_id: roles.get(user.role)! }] },
       },
     });

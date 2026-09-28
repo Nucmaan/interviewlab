@@ -9,6 +9,6 @@ allowBuilds:
   unrs-resolver: false
   msgpackr-extract: false
   # Usage telemetry of swagger-ui-dist: not allowed to run.
-  "@scarf/scarf": false
+  '@scarf/scarf': false
   prisma: true
   '@prisma/engines': true

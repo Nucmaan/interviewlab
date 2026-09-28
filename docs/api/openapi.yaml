@@ -172,6 +172,28 @@ paths:
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
 
+  /api/water/bills/{id}/pdf:
+    get:
+      tags: [Water]
+      summary: Water bill as PDF (with scan-to-pay QR code)
+      description: 'Permission: water.view, or self.view for the customer who owns the bill.'
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: PDF document
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+
   /api/events:
     get:
       tags: [System]
@@ -188,6 +210,17 @@ paths:
             text/event-stream:
               schema: { type: string }
         '401': { description: Not signed in }
+
+  /api/openapi:
+    get:
+      tags: [System]
+      summary: This OpenAPI definition (YAML)
+      responses:
+        '200':
+          description: OpenAPI 3 document
+          content:
+            application/yaml:
+              schema: { type: string }
 
   /api/health:
     get:
