@@ -1,0 +1,753 @@
+// IRCUB database schema.
+//
+// Naming: models are PascalCase in TypeScript but map to the snake_case table names used in the
+// brief (payer, payment, assessment ...). Column names are snake_case everywhere so the raw SQL
+// answers in /sql and the Prisma code use exactly the same names.
+//
+// Things Prisma cannot express (BRIN / INCLUDE indexes, CHECK constraints, the penalty function)
+// are added with raw SQL in migrations and in /sql. See answers/00-assumptions.md for why each
+// table beyond the brief exists.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────── Users, roles and permissions ─────────────────────────────
+
+model User {
+  user_id             Int       @id @default(autoincrement())
+  email               String    @unique
+  full_name           String
+  password_hash       String
+  is_active           Boolean   @default(true)
+  // Optional TOTP 2FA. The secret is only trusted once the user has confirmed a code.
+  totp_secret         String?
+  totp_enabled        Boolean   @default(false)
+  failed_login_count  Int       @default(0)
+  locked_until        DateTime?
+  password_changed_at DateTime  @default(now())
+  last_login_at       DateTime?
+  // Set for Taxpayer/Customer self-service users so they only ever see their own records.
+  payer_id            Int?      @unique
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+
+  payer                Payer?          @relation(fields: [payer_id], references: [payer_id])
+  roles                UserRole[]
+  reversals_requested  Reversal[]      @relation("reversal_requested_by")
+  reversals_decided    Reversal[]      @relation("reversal_decided_by")
+  audit_entries        AuditLog[]
+
+  @@map("app_user")
+}
+
+model Role {
+  role_id        Int      @id @default(autoincrement())
+  code           String   @unique
+  name           String
+  description    String?
+  // System roles are the six from the brief; they cannot be deleted, only edited.
+  is_system      Boolean  @default(false)
+  // Hierarchy: a role inherits every permission of its parent.
+  parent_role_id Int?
+  created_at     DateTime @default(now())
+
+  parent      Role?            @relation("role_hierarchy", fields: [parent_role_id], references: [role_id])
+  children    Role[]           @relation("role_hierarchy")
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@map("role")
+}
+
+model Permission {
+  permission_id Int    @id @default(autoincrement())
+  code          String @unique
+  module        String
+  description   String
+
+  roles RolePermission[]
+
+  @@map("permission")
+}
+
+model RolePermission {
+  role_id       Int
+  permission_id Int
+
+  role       Role       @relation(fields: [role_id], references: [role_id], onDelete: Cascade)
+  permission Permission @relation(fields: [permission_id], references: [permission_id], onDelete: Cascade)
+
+  @@id([role_id, permission_id])
+  @@map("role_permission")
+}
+
+model UserRole {
+  user_id Int
+  role_id Int
+
+  user User @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+  role Role @relation(fields: [role_id], references: [role_id], onDelete: Cascade)
+
+  @@id([user_id, role_id])
+  @@map("user_role")
+}
+
+// Key/value system configuration (penalty rules, thresholds, collection bank GL ...).
+model SystemConfig {
+  key        String   @id
+  value      Json
+  updated_at DateTime @updatedAt
+  updated_by Int?
+
+  @@map("system_config")
+}
+
+// ───────────────────────────── Taxpayer and customer registry ─────────────────────────────
+
+enum PayerType {
+  INDIVIDUAL
+  BUSINESS
+}
+
+model Payer {
+  payer_id    Int       @id @default(autoincrement())
+  payer_type  PayerType
+  full_name   String
+  tin         String    @unique
+  national_id String?
+  phone       String?
+  email       String?
+  address     String?
+  created_at  DateTime  @default(now())
+  created_by  Int?
+
+  user            User?
+  assessments     Assessment[]
+  payments        Payment[]
+  water_accounts  WaterAccount[]
+  duplicate_flags DuplicateFlag[] @relation("flag_payer")
+  duplicate_of    DuplicateFlag[] @relation("flag_matched_payer")
+
+  // Lookups for duplicate detection and the payment capture search.
+  @@index([phone])
+  @@index([email])
+  @@index([national_id])
+  @@index([full_name])
+  @@map("payer")
+}
+
+enum DuplicateField {
+  PHONE
+  EMAIL
+  NATIONAL_ID
+}
+
+enum DuplicateFlagStatus {
+  OPEN
+  CONFIRMED_DUPLICATE
+  NOT_DUPLICATE
+}
+
+model DuplicateFlag {
+  flag_id          Int                 @id @default(autoincrement())
+  payer_id         Int
+  matched_payer_id Int
+  match_field      DuplicateField
+  status           DuplicateFlagStatus @default(OPEN)
+  reviewed_by      Int?
+  reviewed_at      DateTime?
+  created_at       DateTime            @default(now())
+
+  payer         Payer @relation("flag_payer", fields: [payer_id], references: [payer_id])
+  matched_payer Payer @relation("flag_matched_payer", fields: [matched_payer_id], references: [payer_id])
+
+  @@unique([payer_id, matched_payer_id, match_field])
+  @@index([status])
+  @@map("duplicate_flag")
+}
+
+// ───────────────────────────── Revenue types, assessments, penalties ─────────────────────────────
+
+enum RevenueCategory {
+  TAX
+  WATER
+}
+
+model RevenueType {
+  revenue_code   String          @id
+  name           String
+  category       RevenueCategory
+  // Configurable revenue type -> GL code mapping used for FMIS posting.
+  gl_code        String
+  is_active      Boolean         @default(true)
+  default_amount Decimal?        @db.Decimal(14, 2)
+  description    String?
+
+  assessments Assessment[]
+  payments    Payment[]
+  targets     RevenueTarget[]
+
+  @@map("revenue_type")
+}
+
+enum AssessmentStatus {
+  OPEN
+  PART_PAID
+  PAID
+}
+
+model Assessment {
+  assessment_id  Int              @id @default(autoincrement())
+  payer_id       Int
+  revenue_code   String
+  amount_due     Decimal          @db.Decimal(14, 2)
+  // Running total of payments applied (in base currency).
+  amount_paid    Decimal          @default(0) @db.Decimal(14, 2)
+  // Total penalty to date. The penalty job SETS this value, it never adds to it (idempotent).
+  penalty_amount Decimal          @default(0) @db.Decimal(14, 2)
+  due_date       DateTime         @db.Date
+  status         AssessmentStatus @default(OPEN)
+  control_number String           @unique
+  period         String?
+  description    String?
+  created_by     Int?
+  created_at     DateTime         @default(now())
+  updated_at     DateTime         @updatedAt
+
+  payer           Payer            @relation(fields: [payer_id], references: [payer_id])
+  revenue_type    RevenueType      @relation(fields: [revenue_code], references: [revenue_code])
+  payments        Payment[]
+  penalty_history PenaltyHistory[]
+
+  @@index([payer_id])
+  @@index([status, due_date])
+  @@index([revenue_code])
+  @@map("assessment")
+}
+
+model PenaltyHistory {
+  penalty_history_id Int      @id @default(autoincrement())
+  assessment_id      Int
+  run_date           DateTime @db.Date
+  months_overdue     Int
+  unpaid_amount      Decimal  @db.Decimal(14, 2)
+  penalty_amount     Decimal  @db.Decimal(14, 2)
+  created_at         DateTime @default(now())
+
+  assessment Assessment @relation(fields: [assessment_id], references: [assessment_id])
+
+  // Idempotency guard: at most one history row per assessment per run date.
+  @@unique([assessment_id, run_date])
+  @@map("penalty_history")
+}
+
+model RevenueTarget {
+  target_id     Int      @id @default(autoincrement())
+  revenue_code  String
+  period_month  DateTime @db.Date
+  target_amount Decimal  @db.Decimal(16, 2)
+
+  revenue_type RevenueType @relation(fields: [revenue_code], references: [revenue_code])
+
+  @@unique([revenue_code, period_month])
+  @@map("revenue_target")
+}
+
+// ───────────────────────────── Payments ─────────────────────────────
+
+enum Currency {
+  USD
+  SOS
+}
+
+enum PaymentChannel {
+  BANK
+  MOBILE_MONEY
+  CASH
+}
+
+enum PaymentSource {
+  CALLBACK
+  BULK_API
+  CSV_UPLOAD
+  COUNTER
+  PORTAL
+}
+
+// AWAITING_CONFIRMATION: initiated with a channel, waiting for its callback / status check.
+// PENDING -> PROCESSING -> DONE is the processing pipeline guarded by SKIP LOCKED.
+enum PaymentStatus {
+  AWAITING_CONFIRMATION
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+  REVERSED
+}
+
+enum FmisStatus {
+  NOT_POSTED
+  POSTED
+  REVERSED
+}
+
+model Payment {
+  payment_id            Int            @id @default(autoincrement())
+  payer_id              Int
+  assessment_id         Int?
+  // Water payments point at the bill they pay (the brief's payment table has no bill column).
+  bill_id               Int?
+  revenue_code          String
+  amount                Decimal        @db.Decimal(14, 2)
+  currency              Currency
+  // Rate used and amount converted to the base currency (SOS), so totals can be added up.
+  exchange_rate         Decimal        @default(1) @db.Decimal(14, 6)
+  amount_base           Decimal        @db.Decimal(16, 2)
+  channel               PaymentChannel
+  // Unique: the channel's own reference. The strongest guard against double processing.
+  external_ref          String         @unique
+  paid_at               DateTime
+  status                PaymentStatus  @default(PENDING)
+  fmis_status           FmisStatus     @default(NOT_POSTED)
+  source                PaymentSource
+  provider_ref          String?
+  status_check_attempts Int            @default(0)
+  failure_reason        String?
+  captured_by           Int?
+  processing_started_at DateTime?
+  processed_at          DateTime?
+  created_at            DateTime       @default(now())
+
+  payer        Payer        @relation(fields: [payer_id], references: [payer_id])
+  assessment   Assessment?  @relation(fields: [assessment_id], references: [assessment_id])
+  bill         WaterBill?   @relation(fields: [bill_id], references: [bill_id])
+  revenue_type RevenueType  @relation(fields: [revenue_code], references: [revenue_code])
+  journal_line JournalLine?
+  reversal     Reversal?
+
+  @@index([payer_id])
+  @@index([assessment_id])
+  @@index([bill_id])
+  @@index([status, created_at])
+  @@index([fmis_status, status, paid_at])
+  @@index([channel, paid_at])
+  @@map("payment")
+}
+
+enum ReversalStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+}
+
+model Reversal {
+  reversal_id  Int            @id @default(autoincrement())
+  payment_id   Int            @unique
+  reason       String
+  status       ReversalStatus @default(PENDING_APPROVAL)
+  requested_by Int
+  requested_at DateTime       @default(now())
+  decided_by   Int?
+  decided_at   DateTime?
+  decision_note String?
+
+  payment   Payment @relation(fields: [payment_id], references: [payment_id])
+  requester User    @relation("reversal_requested_by", fields: [requested_by], references: [user_id])
+  decider   User?   @relation("reversal_decided_by", fields: [decided_by], references: [user_id])
+
+  // A CHECK constraint (decided_by <> requested_by) is added in raw SQL for segregation of duties.
+  @@index([status])
+  @@map("reversal")
+}
+
+// Rows that failed validation, kept separately from successful payments for admin review.
+model RejectedPayment {
+  rejected_id  Int           @id @default(autoincrement())
+  source       PaymentSource
+  batch_ref    String?
+  row_number   Int?
+  external_ref String?
+  payload      Json
+  reason       String
+  created_at   DateTime      @default(now())
+
+  @@index([created_at])
+  @@index([external_ref])
+  @@map("rejected_payment")
+}
+
+model IdempotencyKey {
+  key             String   @id
+  // Hash of the request body: the same key with a different body is a client error.
+  request_hash    String
+  endpoint        String
+  response_status Int
+  response_body   Json
+  created_at      DateTime @default(now())
+
+  @@index([created_at])
+  @@map("idempotency_key")
+}
+
+model ExchangeRate {
+  rate_id     Int      @id @default(autoincrement())
+  currency    Currency
+  // How many base-currency (SOS) units one unit of `currency` is worth.
+  rate_to_base Decimal @db.Decimal(14, 6)
+  source      String
+  fetched_at  DateTime @default(now())
+
+  @@index([currency, fetched_at])
+  @@map("exchange_rate")
+}
+
+// ───────────────────────────── Water utility ─────────────────────────────
+
+enum TariffClass {
+  DOMESTIC
+  COMMERCIAL
+  INSTITUTIONAL
+}
+
+enum WaterAccountStatus {
+  ACTIVE
+  SUSPENDED
+  DISCONNECTED
+  CLOSED
+}
+
+model WaterAccount {
+  account_no   String             @id
+  payer_id     Int
+  meter_no     String             @unique
+  // Needed for rollover: a 5-digit meter wraps at 100,000.
+  meter_digits Int                @default(5)
+  tariff_class TariffClass
+  status       WaterAccountStatus @default(ACTIVE)
+  address      String?
+  created_at   DateTime           @default(now())
+
+  payer    Payer          @relation(fields: [payer_id], references: [payer_id])
+  readings MeterReading[]
+  bills    WaterBill[]
+
+  @@index([payer_id])
+  @@map("water_account")
+}
+
+enum ReadingType {
+  ACTUAL
+  ESTIMATED
+}
+
+enum ReadingFlag {
+  NORMAL
+  ROLLOVER
+  METER_REPLACEMENT
+}
+
+model MeterReading {
+  reading_id     Int         @id @default(autoincrement())
+  meter_no       String
+  reading_date   DateTime    @db.Date
+  reading_value  Int
+  reading_type   ReadingType
+  reading_flag   ReadingFlag @default(NORMAL)
+  // Stored when the reading is accepted, so history and estimates do not need recalculating.
+  consumption_m3 Int
+  captured_by    Int?
+  created_at     DateTime    @default(now())
+
+  account WaterAccount @relation(fields: [meter_no], references: [meter_no])
+  bills   WaterBill[]
+
+  @@unique([meter_no, reading_date])
+  @@map("meter_reading")
+}
+
+model Tariff {
+  tariff_id      Int         @id @default(autoincrement())
+  tariff_class   TariffClass
+  name           String
+  service_charge Decimal     @db.Decimal(14, 2)
+  effective_from DateTime    @db.Date
+  is_active      Boolean     @default(true)
+
+  bands TariffBand[]
+
+  @@index([tariff_class, effective_from])
+  @@map("tariff")
+}
+
+model TariffBand {
+  band_id     Int     @id @default(autoincrement())
+  tariff_id   Int
+  sort_order  Int
+  // Upper limit of the band in m³; NULL for the last, open-ended band.
+  up_to_m3    Int?
+  rate_per_m3 Decimal @db.Decimal(14, 2)
+
+  tariff Tariff @relation(fields: [tariff_id], references: [tariff_id], onDelete: Cascade)
+
+  @@unique([tariff_id, sort_order])
+  @@map("tariff_band")
+}
+
+enum BillingCycleStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model BillingCycle {
+  cycle_id         Int                @id @default(autoincrement())
+  billing_month    DateTime           @unique @db.Date
+  status           BillingCycleStatus @default(RUNNING)
+  bills_created    Int                @default(0)
+  bills_held       Int                @default(0)
+  exceptions       Json               @default("[]")
+  error            String?
+  run_by           Int?
+  started_at       DateTime           @default(now())
+  completed_at     DateTime?
+
+  bills WaterBill[]
+
+  @@map("billing_cycle")
+}
+
+// HELD: abnormal consumption, waiting for investigation before release.
+enum WaterBillStatus {
+  HELD
+  ISSUED
+  PART_PAID
+  PAID
+  CARRIED_FORWARD
+  CANCELLED
+}
+
+model WaterBill {
+  bill_id                 Int             @id @default(autoincrement())
+  account_no              String
+  billing_month           DateTime        @db.Date
+  cycle_id                Int?
+  reading_id              Int?
+  consumption_m3          Int
+  is_estimated            Boolean         @default(false)
+  consumption_charge      Decimal         @db.Decimal(14, 2)
+  service_charge          Decimal         @db.Decimal(14, 2)
+  // This month's charges only; used for collection efficiency (collected / billed).
+  amount_billed           Decimal         @db.Decimal(14, 2)
+  previous_balance        Decimal         @default(0) @db.Decimal(14, 2)
+  payments_received       Decimal         @default(0) @db.Decimal(14, 2)
+  arrears_brought_forward Decimal         @default(0) @db.Decimal(14, 2)
+  total_due               Decimal         @db.Decimal(14, 2)
+  amount_paid             Decimal         @default(0) @db.Decimal(14, 2)
+  due_date                DateTime        @db.Date
+  status                  WaterBillStatus @default(ISSUED)
+  is_abnormal             Boolean         @default(false)
+  hold_reason             String?
+  control_number          String          @unique
+  released_by             Int?
+  released_at             DateTime?
+  created_at              DateTime        @default(now())
+
+  account  WaterAccount  @relation(fields: [account_no], references: [account_no])
+  cycle    BillingCycle? @relation(fields: [cycle_id], references: [cycle_id])
+  reading  MeterReading? @relation(fields: [reading_id], references: [reading_id])
+  payments Payment[]
+
+  @@unique([account_no, billing_month])
+  @@index([billing_month])
+  @@index([status])
+  @@index([due_date])
+  @@map("water_bill")
+}
+
+// ───────────────────────────── FMIS posting ─────────────────────────────
+
+enum JournalBatchStatus {
+  PENDING
+  POSTED
+  FAILED
+  REVERSED
+}
+
+enum JournalBatchType {
+  COLLECTION
+  REVERSAL
+}
+
+model JournalBatch {
+  batch_id       Int                @id @default(autoincrement())
+  business_date  DateTime           @db.Date
+  batch_type     JournalBatchType   @default(COLLECTION)
+  status         JournalBatchStatus @default(PENDING)
+  total_debit    Decimal            @db.Decimal(16, 2)
+  total_credit   Decimal            @db.Decimal(16, 2)
+  fmis_reference String?            @unique
+  attempts       Int                @default(0)
+  last_error     String?
+  created_at     DateTime           @default(now())
+  posted_at      DateTime?
+
+  lines JournalLine[]
+
+  @@index([business_date])
+  @@index([status])
+  @@map("journal_batch")
+}
+
+model JournalLine {
+  line_id      Int     @id @default(autoincrement())
+  batch_id     Int
+  // One credit line per payment. UNIQUE means a payment can never be posted twice.
+  // The bank debit line has no payment (NULLs do not clash in a UNIQUE index).
+  payment_id   Int?    @unique
+  gl_code      String
+  revenue_code String?
+  debit        Decimal @default(0) @db.Decimal(16, 2)
+  credit       Decimal @default(0) @db.Decimal(16, 2)
+  description  String
+
+  batch   JournalBatch @relation(fields: [batch_id], references: [batch_id], onDelete: Cascade)
+  payment Payment?     @relation(fields: [payment_id], references: [payment_id])
+
+  @@index([batch_id])
+  @@index([gl_code])
+  @@map("journal_line")
+}
+
+// ───────────────────────────── Channel reconciliation ─────────────────────────────
+
+enum ChannelMatchStatus {
+  MATCHED
+  AMOUNT_MISMATCH
+  MISSING_IN_IRCUB
+  MISSING_IN_STATEMENT
+}
+
+model ChannelStatementLine {
+  line_id        Int                @id @default(autoincrement())
+  channel        PaymentChannel
+  statement_date DateTime           @db.Date
+  external_ref   String
+  amount         Decimal            @db.Decimal(14, 2)
+  currency       Currency
+  match_status   ChannelMatchStatus?
+  payment_id     Int?
+  imported_by    Int?
+  imported_at    DateTime           @default(now())
+
+  @@unique([channel, statement_date, external_ref])
+  @@index([statement_date])
+  @@map("channel_statement_line")
+}
+
+// ───────────────────────────── Dashboard, alerts, notifications ─────────────────────────────
+
+// Pre-aggregated collections per day, revenue type and channel. The dashboard reads only this
+// table, never the 50M-row payment table. The worker refreshes it.
+model DailySummary {
+  summary_date      DateTime       @db.Date
+  revenue_code      String
+  channel           PaymentChannel
+  payment_count     Int
+  total_amount_base Decimal        @db.Decimal(18, 2)
+  reversal_count    Int            @default(0)
+  refreshed_at      DateTime       @default(now())
+
+  @@id([summary_date, revenue_code, channel])
+  @@index([revenue_code, summary_date])
+  @@map("daily_summary")
+}
+
+enum AlertType {
+  COLLECTION_DROP
+  REVERSAL_SPIKE
+  PAYMENT_FAILED
+  FMIS_POSTING_FAILED
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+model Alert {
+  alert_id        Int           @id @default(autoincrement())
+  alert_type      AlertType
+  severity        AlertSeverity
+  message         String
+  data            Json          @default("{}")
+  // Stops the same alert being raised again and again (e.g. "COLLECTION_DROP:2026-03-01").
+  dedupe_key      String        @unique
+  acknowledged_by Int?
+  acknowledged_at DateTime?
+  created_at      DateTime      @default(now())
+
+  @@index([created_at])
+  @@map("alert")
+}
+
+enum NotificationChannel {
+  SMS
+  EMAIL
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+model Notification {
+  notification_id Int                 @id @default(autoincrement())
+  channel         NotificationChannel
+  recipient       String
+  subject         String?
+  body            String
+  status          NotificationStatus  @default(QUEUED)
+  related_type    String?
+  related_id      String?
+  attempts        Int                 @default(0)
+  error           String?
+  created_at      DateTime            @default(now())
+  sent_at         DateTime?
+
+  @@index([status])
+  @@index([related_type, related_id])
+  @@map("notification")
+}
+
+// ───────────────────────────── Audit ─────────────────────────────
+
+// Append-only, hash-chained audit log: hash = SHA256(prev_hash + row data).
+model AuditLog {
+  audit_id      Int      @id @default(autoincrement())
+  occurred_at   DateTime @default(now())
+  actor_user_id Int?
+  action        String
+  entity_type   String
+  entity_id     String
+  before        Json?
+  after         Json?
+  ip_address    String?
+  prev_hash     String
+  hash          String   @unique
+
+  actor User? @relation(fields: [actor_user_id], references: [user_id])
+
+  @@index([entity_type, entity_id])
+  @@index([actor_user_id])
+  @@index([occurred_at])
+  @@map("audit_log")
+}
